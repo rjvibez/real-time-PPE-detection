@@ -1,6 +1,6 @@
-opencv-python
+streamlit
+opencv-python-headless
 ultralytics
 numpy
-playsound==1.2.2
-streamlit
 pandas
+playsound==1.2.2
