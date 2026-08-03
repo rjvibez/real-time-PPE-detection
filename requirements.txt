@@ -1,0 +1,6 @@
+opencv-python
+ultralytics
+numpy
+playsound==1.2.2
+streamlit
+pandas
