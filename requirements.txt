@@ -4,3 +4,5 @@ ultralytics
 numpy
 pandas
 playsound==1.2.2
+imageio
+imageio-ffmpeg

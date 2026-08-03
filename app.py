@@ -137,6 +137,48 @@ def load_log_df(log_path="logs/ppe_log.txt"):
                     records.append({"Timestamp": ts, "Violation": viol, "Confidence": conf})
     return pd.DataFrame(records)
 
+# Helper function to convert MP4 video to H.264 for HTML5 browser compatibility
+def convert_to_h264(input_path, output_path):
+    if not os.path.exists(input_path):
+        return False
+    import subprocess
+    # Attempt 1: System ffmpeg
+    try:
+        cmd = [
+            "ffmpeg", "-y", "-i", input_path,
+            "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+            "-preset", "fast", output_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            return True
+    except Exception:
+        pass
+
+    # Attempt 2: imageio_ffmpeg executable
+    try:
+        import imageio_ffmpeg
+        ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
+        cmd = [
+            ffmpeg_exe, "-y", "-i", input_path,
+            "-vcodec", "libx264", "-pix_fmt", "yuv420p",
+            "-preset", "fast", output_path
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            return True
+    except Exception:
+        pass
+
+    # Fallback: copy file
+    try:
+        import shutil
+        shutil.copyfile(input_path, output_path)
+        return True
+    except Exception:
+        return False
+
+
 # 3. Sidebar Controls
 st.sidebar.image("https://img.icons8.com/color/96/000000/safety-hat.png", width=70)
 st.sidebar.title("🦺 PPE Detection")
@@ -222,6 +264,9 @@ with tab_live:
     elif input_option == "Live Webcam":
         video_source = 0
 
+    if "is_processing" not in st.session_state:
+        st.session_state.is_processing = False
+
     st.markdown("### Control & Metrics")
     
     # Static Button Controls (Fixed Position - Never Shifts)
@@ -230,6 +275,11 @@ with tab_live:
         start_button = st.button("▶️ Start Processing", type="primary", use_container_width=True)
     with btn_col2:
         stop_button = st.button("⏹️ Stop Processing", use_container_width=True)
+
+    if start_button:
+        st.session_state.is_processing = True
+    if stop_button:
+        st.session_state.is_processing = False
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -269,38 +319,46 @@ with tab_live:
         banner_placeholder = st.empty()
         banner_placeholder.markdown("<div class='alert-banner-success'>✅ No Active Warnings</div>", unsafe_allow_html=True)
 
-    if start_button:
+    if st.session_state.is_processing:
         if video_source is None:
             st.warning("Please upload or select a valid video source before starting.")
+            st.session_state.is_processing = False
         else:
             cap = cv2.VideoCapture(video_source)
             if not cap.isOpened():
-                st.error("Unable to open the selected video source.")
+                if input_option == "Live Webcam":
+                    st.error("⚠️ Unable to open Live Webcam. Note: Physical webcams are only accessible when running locally on your device, not on remote cloud servers.")
+                else:
+                    st.error("Unable to open the selected video source.")
+                st.session_state.is_processing = False
             else:
                 detector.reset_stats()
                 
                 # Output video setup
                 output_dir = "output"
                 os.makedirs(output_dir, exist_ok=True)
-                out_path = os.path.join(output_dir, "detected_construction.mp4")
+                raw_out_path = os.path.join(output_dir, "raw_detected.mp4")
+                h264_out_path = os.path.join(output_dir, "detected_construction.mp4")
                 
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
                 fps_input = cap.get(cv2.CAP_PROP_FPS) or 25.0
+                if fps_input <= 0 or np.isnan(fps_input):
+                    fps_input = 25.0
                 
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out_writer = cv2.VideoWriter(out_path, fourcc, fps_input, (width, height))
+                out_writer = cv2.VideoWriter(raw_out_path, fourcc, fps_input, (width, height))
 
                 st.toast("Detection started!", icon="🚀")
 
-                while cap.isOpened() and not stop_button:
+                while cap.isOpened() and st.session_state.is_processing:
                     ret, frame = cap.read()
                     if not ret:
                         break
 
                     processed_frame, info = detector.process_frame(frame, draw_hud=False)
 
-                    # Write to output video file
+                    # Write frame to raw video file
                     out_writer.write(processed_frame)
 
                     # Convert BGR (OpenCV) to RGB (Streamlit)
@@ -338,10 +396,20 @@ with tab_live:
                     if not df_log.empty:
                         live_log_placeholder.dataframe(df_log.tail(5), use_container_width=True)
 
+                    # Yield minor sleep for smooth frame streaming across WebSocket
+                    time.sleep(0.01)
+
                 cap.release()
                 out_writer.release()
+                st.session_state.is_processing = False
+
+                # Re-encode to H.264 MP4 for HTML5 browser compatibility
+                with st.spinner("Finalizing video for browser playback..."):
+                    convert_to_h264(raw_out_path, h264_out_path)
+
                 st.success("Video processing completed successfully!")
                 st.toast("Saved output video to output/detected_construction.mp4", icon="✅")
+
 
 # --------------------------------
 # TAB 2: Processed Output Video
