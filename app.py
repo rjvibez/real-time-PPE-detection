@@ -402,8 +402,8 @@ with tab_live:
                     # Resize frame to 640x360 FIRST for 10x faster CPU detection & rendering
                     frame = cv2.resize(frame, (640, 360))
 
-                    # Process YOLO detection on alternate frames for ultra-smooth fluid video playback
-                    if frame_count % 2 == 0 or last_processed_frame is None:
+                    # Process YOLO detection on 1 out of every 3 frames for maximum fluid video streaming speed
+                    if frame_count % 3 == 0 or last_processed_frame is None:
                         processed_frame, info = detector.process_frame(frame, draw_hud=False)
                         last_processed_frame = processed_frame
                         last_info = info
