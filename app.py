@@ -3,6 +3,7 @@ import cv2
 import tempfile
 import os
 import time
+import base64
 import pandas as pd
 import numpy as np
 from detector import PPEDetector
@@ -120,6 +121,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Helper to stream audio directly into the user's browser (Works on Localhost & Streamlit Cloud)
+def play_browser_audio(sound_path, placeholder):
+    if not sound_path or not os.path.exists(sound_path):
+        return
+    ext = os.path.splitext(sound_path)[1].lower()
+    mime = "audio/mp3" if ext == ".mp3" else "audio/wav"
+    try:
+        with open(sound_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+            audio_html = f'<audio autoplay style="display:none;"><source src="data:{mime};base64,{b64}" type="{mime}"></audio>'
+            placeholder.markdown(audio_html, unsafe_allow_html=True)
+    except Exception:
+        pass
 
 # Helper function to load logs into DataFrame
 def load_log_df(log_path=None):
@@ -327,6 +342,7 @@ with tab_live:
         st.markdown("#### Active Warning Alert")
         banner_placeholder = st.empty()
         banner_placeholder.markdown("<div class='alert-banner-success'>✅ No Active Warnings</div>", unsafe_allow_html=True)
+        audio_placeholder = st.empty()
 
     if st.session_state.is_processing:
         if video_source is None:
@@ -364,12 +380,14 @@ with tab_live:
                 st.toast("Detection started!", icon="🚀")
 
                 frame_count = 0
+                last_sound_time = 0.0
                 while cap.isOpened() and st.session_state.is_processing:
                     ret, frame = cap.read()
                     if not ret:
-                        # Continuous looping for demo and uploaded videos
+                        # Robust video looping for Linux cloud FFmpeg backends
                         if input_option in ["Demo Video", "Upload Video"]:
-                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            cap.release()
+                            cap = cv2.VideoCapture(video_source)
                             ret, frame = cap.read()
                             if not ret:
                                 break
@@ -385,13 +403,23 @@ with tab_live:
                         except Exception:
                             pass
 
-                    # Convert frame to lightweight JPEG bytes (~35 KB vs 6.2 MB raw numpy array)
-                    # This prevents Streamlit Cloud WebSocket payload buffer overflow & freezing on deployed links
-                    small_frame = cv2.resize(processed_frame, (854, 480))
-                    _, jpeg_buf = cv2.imencode('.jpg', small_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                    frame_placeholder.image(jpeg_buf.tobytes(), use_container_width=True)
+                    # Resize frame to 640x360 and convert to RGB for fast Streamlit web rendering
+                    small_frame = cv2.resize(processed_frame, (640, 360))
+                    rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+                    frame_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
 
                     frame_count += 1
+
+                    # Trigger browser audio alert if warning exists and audio is enabled
+                    if info["warning"] and enable_sound:
+                        current_t = time.time()
+                        if current_t - last_sound_time > alert_interval:
+                            mp3_f = os.path.join(BASE_DIR, "sounds", "alert.mp3")
+                            wav_f = os.path.join(BASE_DIR, "sounds", "alert.wav")
+                            s_file = mp3_f if os.path.exists(mp3_f) else (wav_f if os.path.exists(wav_f) else None)
+                            if s_file:
+                                play_browser_audio(s_file, audio_placeholder)
+                                last_sound_time = current_t
 
                     # Throttle heavy UI element updates (Metrics & Banners) every 5 frames to avoid WebSocket congestion
                     if frame_count % 5 == 0 or info["warning"]:
