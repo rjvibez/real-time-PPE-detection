@@ -397,7 +397,10 @@ with tab_live:
                         else:
                             break
 
-                    frame_count += 1
+                    # Skip unrendered video frames to sync stream with 1.0x normal real-time playback speed
+                    if input_option in ["Demo Video", "Upload Video"]:
+                        for _ in range(2):
+                            cap.grab()
 
                     # Resize frame to 640x360 FIRST for 10x faster CPU detection & rendering
                     frame = cv2.resize(frame, (640, 360))

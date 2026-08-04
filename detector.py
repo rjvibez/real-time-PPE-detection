@@ -126,31 +126,24 @@ class PPEDetector:
                     clean_name = label.replace("NO-", "NO ").replace("-", " ").upper()
                     display_label = f"{clean_name} {conf*100:.0f}%"
 
-                # 1. Main Bounding Box (Bold 3px stroke)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 3, cv2.LINE_AA)
+                # 1. Bounding Box (Clean vibrant 2px stroke)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
 
-                # 2. High-Contrast Filled Pill Badge Background with Drop-Shadowed Bold Text
-                font_scale = 0.60
+                # 2. Modern Roboflow-Style Solid Label Badge
+                font_scale = 0.50
                 font_thick = 2
                 (tw, th), _ = cv2.getTextSize(display_label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
 
-                pad = 8
-                bg_y1 = max(y1 - th - pad * 2, 0)
-                bg_y2 = bg_y1 + th + pad * 2
+                # Draw solid label box directly above the top edge of the bounding box
+                pad = 6
+                bg_y2 = max(y1, th + pad + 2)
+                bg_y1 = max(bg_y2 - th - pad, 0)
                 bg_x1 = x1
                 bg_x2 = x1 + tw + pad * 2
 
-                # Dark backing rectangle + vibrant color fill + white outer border
-                cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (15, 15, 15), -1)
-                cv2.rectangle(frame, (bg_x1 + 2, bg_y1 + 2), (bg_x2 - 2, bg_y2 - 2), color, -1)
-                cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), 1, cv2.LINE_AA)
-
-                # Crisp White Text with Black Drop Shadow for maximum contrast
-                text_x = bg_x1 + pad
-                text_y = bg_y2 - pad - 2
-                cv2.putText(frame, display_label, (text_x + 1, text_y + 1),
-                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), font_thick + 1, cv2.LINE_AA)
-                cv2.putText(frame, display_label, (text_x, text_y),
+                # Solid color fill for badge + sharp white text
+                cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
+                cv2.putText(frame, display_label, (bg_x1 + pad, bg_y2 - 3),
                             cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thick, cv2.LINE_AA)
 
         # Trigger sound alert if warning exists and interval passed
