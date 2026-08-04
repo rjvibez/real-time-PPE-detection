@@ -119,8 +119,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Helper function to load logs into DataFrame
-def load_log_df(log_path="logs/ppe_log.txt"):
+def load_log_df(log_path=None):
+    if log_path is None:
+        log_path = os.path.join(BASE_DIR, "logs", "ppe_log.txt")
     if not os.path.exists(log_path):
         return pd.DataFrame(columns=["Timestamp", "Violation", "Confidence"])
     
@@ -232,9 +236,9 @@ tab_live, tab_video, tab_logs, tab_analytics = st.tabs([
 @st.cache_resource
 def get_ppe_detector():
     return PPEDetector(
-        model_path="models/best.pt",
-        log_path="logs/ppe_log.txt",
-        sound_path="sounds/alert.wav"
+        model_path=os.path.join(BASE_DIR, "models", "best.pt"),
+        log_path=os.path.join(BASE_DIR, "logs", "ppe_log.txt"),
+        sound_path=os.path.join(BASE_DIR, "sounds", "alert.wav")
     )
 
 detector = get_ppe_detector()
@@ -251,7 +255,7 @@ with tab_live:
     temp_file_path = None
 
     if input_option == "Demo Video":
-        demo_path = os.path.abspath("videos/construction.mp4")
+        demo_path = os.path.join(BASE_DIR, "videos", "construction.mp4")
         if os.path.exists(demo_path):
             video_source = demo_path
         else:
@@ -340,10 +344,10 @@ with tab_live:
                 detector.reset_stats()
                 
                 # Output video setup
-                output_dir = "output"
+                output_dir = os.path.join(BASE_DIR, "output")
                 os.makedirs(output_dir, exist_ok=True)
-                raw_out_path = os.path.abspath(os.path.join(output_dir, "raw_detected.mp4"))
-                h264_out_path = os.path.abspath(os.path.join(output_dir, "detected_construction.mp4"))
+                raw_out_path = os.path.join(output_dir, "raw_detected.mp4")
+                h264_out_path = os.path.join(output_dir, "detected_construction.mp4")
                 
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
@@ -352,7 +356,10 @@ with tab_live:
                     fps_input = 25.0
                 
                 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                out_writer = cv2.VideoWriter(raw_out_path, fourcc, fps_input, (width, height))
+                try:
+                    out_writer = cv2.VideoWriter(raw_out_path, fourcc, fps_input, (width, height))
+                except Exception:
+                    out_writer = None
 
                 st.toast("Detection started!", icon="🚀")
 
@@ -371,8 +378,12 @@ with tab_live:
 
                     processed_frame, info = detector.process_frame(frame, draw_hud=False)
 
-                    # Write frame to raw video file
-                    out_writer.write(processed_frame)
+                    # Write frame to raw video file if writer is initialized
+                    if out_writer and out_writer.isOpened():
+                        try:
+                            out_writer.write(processed_frame)
+                        except Exception:
+                            pass
 
                     # Convert frame to lightweight JPEG bytes (~35 KB vs 6.2 MB raw numpy array)
                     # This prevents Streamlit Cloud WebSocket payload buffer overflow & freezing on deployed links
@@ -418,7 +429,8 @@ with tab_live:
                     time.sleep(0.01)
 
                 cap.release()
-                out_writer.release()
+                if out_writer and out_writer.isOpened():
+                    out_writer.release()
                 st.session_state.is_processing = False
 
                 # Re-encode to H.264 MP4 for HTML5 browser compatibility

@@ -59,7 +59,7 @@ class PPEDetector:
         self.prev_time = current_time
 
         warning = ""
-        results = self.model(frame, verbose=False)
+        results = self.model(frame, verbose=False, imgsz=640)
 
         frame_violations = []
 
