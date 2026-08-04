@@ -374,9 +374,11 @@ with tab_live:
                     # Write frame to raw video file
                     out_writer.write(processed_frame)
 
-                    # Convert BGR (OpenCV) to RGB (Streamlit)
-                    rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-                    frame_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
+                    # Convert frame to lightweight JPEG bytes (~35 KB vs 6.2 MB raw numpy array)
+                    # This prevents Streamlit Cloud WebSocket payload buffer overflow & freezing on deployed links
+                    small_frame = cv2.resize(processed_frame, (854, 480))
+                    _, jpeg_buf = cv2.imencode('.jpg', small_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+                    frame_placeholder.image(jpeg_buf.tobytes(), use_container_width=True)
 
                     frame_count += 1
 
