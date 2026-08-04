@@ -336,9 +336,9 @@ with tab_live:
             cap = cv2.VideoCapture(video_source)
             if not cap.isOpened():
                 if input_option == "Live Webcam":
-                    st.error("⚠️ Unable to open Live Webcam. Note: Physical webcams are only accessible when running locally on your device, not on remote cloud servers.")
+                    st.error("⚠️ Unable to open Live Webcam. Note: Physical webcams are only accessible when running locally on your device, not on remote cloud servers. Please use 'Demo Video' or 'Upload Video' on deployed links.")
                 else:
-                    st.error("Unable to open the selected video source.")
+                    st.error(f"⚠️ Unable to open video source: `{video_source}`. Please ensure file is valid.")
                 st.session_state.is_processing = False
             else:
                 detector.reset_stats()

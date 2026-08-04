@@ -39,6 +39,10 @@ class PPEDetector:
         if not self.enable_sound:
             return
         try:
+            import platform
+            if platform.system() != "Windows":
+                # Audio hardware does not exist on cloud servers (e.g. Streamlit Cloud Linux container)
+                return
             from playsound import playsound
             if self.sound_path and os.path.exists(self.sound_path):
                 playsound(self.sound_path)
