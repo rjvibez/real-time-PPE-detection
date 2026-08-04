@@ -40,9 +40,10 @@ class PPEDetector:
             return
         try:
             from playsound import playsound
-            if os.path.exists(self.sound_path):
+            if self.sound_path and os.path.exists(self.sound_path):
                 playsound(self.sound_path)
         except Exception:
+            # Sound hardware unavailable in headless cloud environments (e.g. Streamlit Cloud)
             pass
 
     def log_violation(self, violation_type, conf):

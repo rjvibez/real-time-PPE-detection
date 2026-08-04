@@ -228,15 +228,19 @@ tab_live, tab_video, tab_logs, tab_analytics = st.tabs([
     "📊 Analytics & Report"
 ])
 
-# Initialize Detector
-detector = PPEDetector(
-    model_path="models/best.pt",
-    log_path="logs/ppe_log.txt",
-    sound_path="sounds/alert.wav",
-    conf_threshold=conf_threshold,
-    alert_interval=alert_interval,
-    enable_sound=enable_sound
-)
+# Initialize Detector with Caching for High-Performance Cloud Deployment
+@st.cache_resource
+def get_ppe_detector():
+    return PPEDetector(
+        model_path="models/best.pt",
+        log_path="logs/ppe_log.txt",
+        sound_path="sounds/alert.wav"
+    )
+
+detector = get_ppe_detector()
+detector.conf_threshold = conf_threshold
+detector.alert_interval = alert_interval
+detector.enable_sound = enable_sound
 
 # --------------------------
 # TAB 1: Live Detection Feed
@@ -247,7 +251,7 @@ with tab_live:
     temp_file_path = None
 
     if input_option == "Demo Video":
-        demo_path = "videos/construction.mp4"
+        demo_path = os.path.abspath("videos/construction.mp4")
         if os.path.exists(demo_path):
             video_source = demo_path
         else:
@@ -258,7 +262,8 @@ with tab_live:
         if uploaded_file is not None:
             tfile = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
             tfile.write(uploaded_file.read())
-            video_source = tfile.name
+            tfile.close()
+            video_source = os.path.abspath(tfile.name)
             temp_file_path = tfile.name
 
     elif input_option == "Live Webcam":
@@ -337,8 +342,8 @@ with tab_live:
                 # Output video setup
                 output_dir = "output"
                 os.makedirs(output_dir, exist_ok=True)
-                raw_out_path = os.path.join(output_dir, "raw_detected.mp4")
-                h264_out_path = os.path.join(output_dir, "detected_construction.mp4")
+                raw_out_path = os.path.abspath(os.path.join(output_dir, "raw_detected.mp4"))
+                h264_out_path = os.path.abspath(os.path.join(output_dir, "detected_construction.mp4"))
                 
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
@@ -351,10 +356,18 @@ with tab_live:
 
                 st.toast("Detection started!", icon="🚀")
 
+                frame_count = 0
                 while cap.isOpened() and st.session_state.is_processing:
                     ret, frame = cap.read()
                     if not ret:
-                        break
+                        # Continuous looping for demo and uploaded videos
+                        if input_option in ["Demo Video", "Upload Video"]:
+                            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                            ret, frame = cap.read()
+                            if not ret:
+                                break
+                        else:
+                            break
 
                     processed_frame, info = detector.process_frame(frame, draw_hud=False)
 
@@ -365,36 +378,39 @@ with tab_live:
                     rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
                     frame_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
 
-                    # Update Metrics
-                    metric_fps.metric("Processing FPS", f"{info['fps']:.1f}")
-                    metric_helmet.metric("Helmet Violations", f"{info['helmet_count']}")
-                    metric_vest.metric("Vest Violations", f"{info['vest_count']}")
-                    metric_mask.metric("Mask Violations", f"{info['mask_count']}")
+                    frame_count += 1
 
-                    # Update Warning Banner (Right side panel below logs)
-                    if info["warning"]:
-                        banner_placeholder.markdown(
-                            f"<div class='alert-banner-danger'>⚠️ <b>{info['warning']}</b></div>",
-                            unsafe_allow_html=True
-                        )
-                        status_box.markdown(
-                            f"<div class='alert-banner-danger'>🔴 VIOLATION DETECTED</div>",
-                            unsafe_allow_html=True
-                        )
-                    else:
-                        banner_placeholder.markdown(
-                            "<div class='alert-banner-success'>✅ No Active Warnings</div>",
-                            unsafe_allow_html=True
-                        )
-                        status_box.markdown(
-                            "<div class='alert-banner-success'>🟢 Monitoring Active & Safe</div>",
-                            unsafe_allow_html=True
-                        )
+                    # Throttle heavy UI element updates (Metrics & Banners) every 5 frames to avoid WebSocket congestion
+                    if frame_count % 5 == 0 or info["warning"]:
+                        metric_fps.metric("Processing FPS", f"{info['fps']:.1f}")
+                        metric_helmet.metric("Helmet Violations", f"{info['helmet_count']}")
+                        metric_vest.metric("Vest Violations", f"{info['vest_count']}")
+                        metric_mask.metric("Mask Violations", f"{info['mask_count']}")
 
-                    # Live Log View
-                    df_log = load_log_df("logs/ppe_log.txt")
-                    if not df_log.empty:
-                        live_log_placeholder.dataframe(df_log.tail(5), use_container_width=True)
+                        if info["warning"]:
+                            banner_placeholder.markdown(
+                                f"<div class='alert-banner-danger'>⚠️ <b>{info['warning']}</b></div>",
+                                unsafe_allow_html=True
+                            )
+                            status_box.markdown(
+                                f"<div class='alert-banner-danger'>🔴 VIOLATION DETECTED</div>",
+                                unsafe_allow_html=True
+                            )
+                        else:
+                            banner_placeholder.markdown(
+                                "<div class='alert-banner-success'>✅ No Active Warnings</div>",
+                                unsafe_allow_html=True
+                            )
+                            status_box.markdown(
+                                "<div class='alert-banner-success'>🟢 Monitoring Active & Safe</div>",
+                                unsafe_allow_html=True
+                            )
+
+                    # Throttle live log table update every 15 frames
+                    if frame_count % 15 == 0:
+                        df_log = load_log_df("logs/ppe_log.txt")
+                        if not df_log.empty:
+                            live_log_placeholder.dataframe(df_log.tail(5), use_container_width=True)
 
                     # Yield minor sleep for smooth frame streaming across WebSocket
                     time.sleep(0.01)
