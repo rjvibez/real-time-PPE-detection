@@ -78,10 +78,10 @@ class PPEDetector:
                 label = self.model.names[cls]
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
 
-                color = (0, 255, 0) # Green for compliant PPE
-
+                # Define compliance color and human-friendly display label
                 if label == "NO-Hardhat":
-                    color = (0, 0, 255)
+                    color = (40, 40, 230) # Crimson Red for violation
+                    display_label = f"NO HELMET {conf*100:.0f}%"
                     warning = "WARNING : HELMET MISSING"
                     frame_violations.append("NO-Hardhat")
 
@@ -91,7 +91,8 @@ class PPEDetector:
                         self.last_logged["Helmet"] = current_time
 
                 elif label == "NO-Safety Vest":
-                    color = (0, 0, 255)
+                    color = (40, 40, 230) # Crimson Red for violation
+                    display_label = f"NO VEST {conf*100:.0f}%"
                     warning = "WARNING : SAFETY VEST MISSING"
                     frame_violations.append("NO-Safety Vest")
 
@@ -101,7 +102,8 @@ class PPEDetector:
                         self.last_logged["Vest"] = current_time
 
                 elif label == "NO-Mask":
-                    color = (0, 0, 255)
+                    color = (40, 40, 230) # Crimson Red for violation
+                    display_label = f"NO MASK {conf*100:.0f}%"
                     warning = "WARNING : MASK MISSING"
                     frame_violations.append("NO-Mask")
 
@@ -110,9 +112,48 @@ class PPEDetector:
                         self.log_violation("Mask Missing", conf)
                         self.last_logged["Mask"] = current_time
 
-                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, f"{label} {conf:.2f}", (x1, max(y1 - 10, 20)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                elif label in ["Hardhat", "Safety-Helmet", "Helmet"]:
+                    color = (40, 200, 40) # Neon Green for compliance
+                    display_label = f"HELMET {conf*100:.0f}%"
+                elif label in ["Safety Vest", "Vest"]:
+                    color = (40, 200, 40) # Neon Green for compliance
+                    display_label = f"SAFETY VEST {conf*100:.0f}%"
+                elif label in ["Mask", "Face-Mask"]:
+                    color = (40, 200, 40) # Neon Green for compliance
+                    display_label = f"MASK {conf*100:.0f}%"
+                else:
+                    color = (40, 200, 40) if "NO-" not in label else (40, 40, 230)
+                    clean_name = label.replace("NO-", "NO ").replace("-", " ").upper()
+                    display_label = f"{clean_name} {conf*100:.0f}%"
+
+                # 1. Main Bounding Box
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2, cv2.LINE_AA)
+
+                # 2. High-Tech Corner Accent Brackets
+                c_len = min(14, max(4, int((x2 - x1) / 4), int((y2 - y1) / 4)))
+                cv2.line(frame, (x1, y1), (x1 + c_len, y1), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x1, y1), (x1, y1 + c_len), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x2, y1), (x2 - c_len, y1), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x2, y1), (x2, y1 + c_len), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x1, y2), (x1 + c_len, y2), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x1, y2), (x1, y2 - c_len), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x2, y2), (x2 - c_len, y2), (255, 255, 255), 2, cv2.LINE_AA)
+                cv2.line(frame, (x2, y2), (x2, y2 - c_len), (255, 255, 255), 2, cv2.LINE_AA)
+
+                # 3. Solid Filled Label Badge Background with White Text
+                font_scale = 0.45
+                font_thick = 1
+                (tw, th), _ = cv2.getTextSize(display_label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, font_thick)
+
+                bg_y1 = max(y1 - th - 10, 0)
+                bg_y2 = bg_y1 + th + 10
+                bg_x1 = x1
+                bg_x2 = x1 + tw + 12
+
+                cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), color, -1)
+                cv2.rectangle(frame, (bg_x1, bg_y1), (bg_x2, bg_y2), (255, 255, 255), 1, cv2.LINE_AA)
+                cv2.putText(frame, display_label, (bg_x1 + 6, bg_y2 - 5),
+                            cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), font_thick, cv2.LINE_AA)
 
         # Trigger sound alert if warning exists and interval passed
         if warning and (current_time - self.last_alert_time > self.alert_interval):
@@ -122,17 +163,19 @@ class PPEDetector:
         # Draw warning box at bottom-right corner of the frame
         if warning:
             h, w, _ = frame.shape
-            box_w, box_h = 420, 55
-            bx2 = w - 15
-            by2 = h - 15
-            bx1 = max(bx2 - box_w, 10)
-            by1 = max(by2 - box_h, 10)
+            font_scale = max(0.45, w / 1200.0)
+            (tw, th), _ = cv2.getTextSize(warning, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 2)
+            pad_x, pad_y = 12, 10
+            bx2 = w - 10
+            by2 = h - 10
+            bx1 = max(bx2 - tw - pad_x * 2, 10)
+            by1 = max(by2 - th - pad_y * 2, 10)
 
-            # Draw solid red warning box with white border
-            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (0, 0, 255), -1)
-            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 255, 255), 2)
-            cv2.putText(frame, warning, (bx1 + 15, by1 + 36),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+            # Draw solid crimson red warning banner with white border
+            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (40, 40, 230), -1)
+            cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 255, 255), 2, cv2.LINE_AA)
+            cv2.putText(frame, warning, (bx1 + pad_x, by2 - pad_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 2, cv2.LINE_AA)
 
         # Draw HUD overlay if requested
         if draw_hud:
