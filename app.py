@@ -381,6 +381,9 @@ with tab_live:
 
                 frame_count = 0
                 last_sound_time = 0.0
+                last_processed_frame = None
+                last_info = {"warning": "", "fps": 30.0, "helmet_count": 0, "vest_count": 0, "mask_count": 0}
+
                 while cap.isOpened() and st.session_state.is_processing:
                     ret, frame = cap.read()
                     if not ret:
@@ -394,7 +397,19 @@ with tab_live:
                         else:
                             break
 
-                    processed_frame, info = detector.process_frame(frame, draw_hud=False)
+                    frame_count += 1
+
+                    # Resize frame to 640x360 FIRST for 10x faster CPU detection & rendering
+                    frame = cv2.resize(frame, (640, 360))
+
+                    # Process YOLO detection on alternate frames for ultra-smooth fluid video playback
+                    if frame_count % 2 == 0 or last_processed_frame is None:
+                        processed_frame, info = detector.process_frame(frame, draw_hud=False)
+                        last_processed_frame = processed_frame
+                        last_info = info
+                    else:
+                        processed_frame = last_processed_frame
+                        info = last_info
 
                     # Write frame to raw video file if writer is initialized
                     if out_writer and out_writer.isOpened():
@@ -403,12 +418,9 @@ with tab_live:
                         except Exception:
                             pass
 
-                    # Resize frame to 640x360 and convert to RGB for fast Streamlit web rendering
-                    small_frame = cv2.resize(processed_frame, (640, 360))
-                    rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
+                    # Convert BGR to RGB for fast Streamlit web rendering
+                    rgb_frame = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
                     frame_placeholder.image(rgb_frame, channels="RGB", use_container_width=True)
-
-                    frame_count += 1
 
                     # Trigger browser audio alert if warning exists and audio is enabled
                     if info["warning"] and enable_sound:
